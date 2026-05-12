@@ -109,7 +109,7 @@ def test_usage_returns_all_accounts(client, app):
     assert data["object"] == "list"
     assert len(data["accounts"]) == 1
     a = data["accounts"][0]
-    assert a["account_id"] == "acct1"
+    assert a["account_id"] == "acct_ed0fe2baf82b"
     assert a["circuit_state"] == "healthy"
     assert a["usage"]["current_usage"] == pytest.approx(8181.27)
     assert a["usage"]["usage_limit"] == pytest.approx(10000.0)
@@ -133,14 +133,14 @@ def test_usage_filter_by_account_id(client, app):
 
     with patch("kiro.routes_admin._usage_service", mock_service):
         resp = client.get(
-            "/admin/accounts/usage?account_id=acct1",
+            "/admin/accounts/usage?account_id=acct_ed0fe2baf82b",
             headers={"Authorization": f"Bearer {FAKE_KEY}"},
         )
 
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["accounts"]) == 1
-    assert data["accounts"][0]["account_id"] == "acct1"
+    assert data["accounts"][0]["account_id"] == "acct_ed0fe2baf82b"
 
 
 def test_usage_filter_unknown_account_returns_404(client, app):

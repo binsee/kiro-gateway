@@ -513,7 +513,7 @@ async def lifespan(app: FastAPI):
                         logger.warning(f"Background init failed for account: {account_id}")
                 except Exception as exc:
                     logger.warning(f"Background init error for account {account_id}: {exc}")
-        asyncio.create_task(_init_remaining())
+        app.state._init_remaining_task = asyncio.create_task(_init_remaining())
         logger.info(f"Queued background initialization for {len(remaining)} remaining account(s)")
 
     # Save initial state
@@ -537,6 +537,15 @@ async def lifespan(app: FastAPI):
         await save_task
     except asyncio.CancelledError:
         pass
+
+    # Cancel background account init task if still running
+    init_task = getattr(app.state, "_init_remaining_task", None)
+    if init_task and not init_task.done():
+        init_task.cancel()
+        try:
+            await init_task
+        except asyncio.CancelledError:
+            pass
     
     # Final state save
     await app.state.account_manager._save_state()

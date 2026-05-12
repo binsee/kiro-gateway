@@ -176,7 +176,8 @@ class AccountUsageService:
             if stale_entry:
                 stale_raw = stale_entry.raw
             result = await fetch_usage_limits(auth_manager, stale_fallback=stale_raw)
-            self._cache.set_usage(account_id, result)
+            if not result.stale:
+                self._cache.set_usage(account_id, result)
             return result
 
     async def get_profile(

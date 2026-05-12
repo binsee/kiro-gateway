@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -17,13 +19,21 @@ CIRCUIT_TRIP_THRESHOLD = 3
 
 
 def _verify_api_key(authorization: str = Security(api_key_header)) -> bool:
-    if authorization != f"Bearer {PROXY_API_KEY}":
+    # timing-safe comparison prevents key-length oracle attacks
+    if not hmac.compare_digest(authorization or "", f"Bearer {PROXY_API_KEY}"):
         raise HTTPException(status_code=403, detail="Invalid API key")
     return True
 
 
 def _circuit_state(failures: int) -> str:
     return "tripped" if failures >= CIRCUIT_TRIP_THRESHOLD else "healthy"
+
+
+def _safe_account_id(raw_id: str) -> str:
+    """Return a display-safe account identifier that does not leak filesystem paths."""
+    if raw_id.startswith("refresh_token_"):
+        return raw_id
+    return "acct_" + hashlib.sha256(raw_id.encode()).hexdigest()[:12]
 
 
 def _build_usage_summary(usage_raw: Dict[str, Any]) -> Dict[str, Any]:
@@ -77,13 +87,15 @@ async def get_accounts_usage(
     Returns usage limits and profile info for all configured Kiro accounts.
     Responses are cached (5 min for usage, 24 h for profile).
     Use ?force_refresh=true to bypass cache (min 30s between forced refreshes).
-    Use ?account_id=<id> to filter to a single account.
+    Use ?account_id=<safe_id> to filter to a single account.
     """
-    manager = request.app.state.account_manager
+    manager = getattr(request.app.state, "account_manager", None)
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
     all_accounts = manager.get_all_accounts()
 
     if account_id is not None:
-        all_accounts = [a for a in all_accounts if a.id == account_id]
+        all_accounts = [a for a in all_accounts if _safe_account_id(a.id) == account_id]
         if not all_accounts:
             raise HTTPException(status_code=404, detail=f"Account '{account_id}' not found")
 
@@ -91,7 +103,7 @@ async def get_accounts_usage(
     for account in all_accounts:
         if account.auth_manager is None:
             results.append({
-                "account_id": account.id,
+                "account_id": _safe_account_id(account.id),
                 "enabled": False,
                 "circuit_state": _circuit_state(account.failures),
                 "profile": None,
@@ -127,7 +139,7 @@ async def get_accounts_usage(
                 error = str(exc)
 
         results.append({
-            "account_id": account.id,
+            "account_id": _safe_account_id(account.id),
             "enabled": True,
             "circuit_state": _circuit_state(account.failures),
             "stats": {
