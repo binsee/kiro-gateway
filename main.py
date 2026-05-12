@@ -499,7 +499,23 @@ async def lifespan(app: FastAPI):
     if not initialized:
         logger.error("Failed to initialize any account. Check your credentials.")
         raise RuntimeError("Failed to initialize any account")
-    
+
+    # Initialize remaining accounts in background (non-blocking)
+    remaining = [aid for aid in all_accounts if app.state.account_manager._accounts[aid].auth_manager is None]
+    if remaining:
+        async def _init_remaining():
+            for account_id in remaining:
+                try:
+                    success = await app.state.account_manager._initialize_account(account_id)
+                    if success:
+                        logger.info(f"Background-initialized account: {account_id}")
+                    else:
+                        logger.warning(f"Background init failed for account: {account_id}")
+                except Exception as exc:
+                    logger.warning(f"Background init error for account {account_id}: {exc}")
+        asyncio.create_task(_init_remaining())
+        logger.info(f"Queued background initialization for {len(remaining)} remaining account(s)")
+
     # Save initial state
     await app.state.account_manager._save_state()
     
